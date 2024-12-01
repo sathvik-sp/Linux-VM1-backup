@@ -1,0 +1,8 @@
+Started at Tue Nov 26 10:11:41 EST 2024
+Checking pipeline1
+Deleting /var/lib/jenkins/workspace/pipeline1 on Jenkins
+Deleting /home/azureuser/Project1/workspace/pipeline1 on Node1
+Checking Pipeline2
+Deleting /var/lib/jenkins/workspace/Pipeline2 on Jenkins
+Deleting /home/azureuser/Project1/workspace/Pipeline2 on Node1
+Finished at Tue Nov 26 10:11:42 EST 2024. 458ms

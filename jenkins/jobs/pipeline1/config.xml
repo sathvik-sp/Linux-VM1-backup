@@ -1,0 +1,191 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job@1468.vcf4f5ee92395">
+  <actions>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2218.v56d0cda_37c72"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2218.v56d0cda_37c72">
+      <jobProperties/>
+      <triggers/>
+      <parameters/>
+      <options/>
+    </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
+  </actions>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <jenkins.model.BuildDiscarderProperty>
+      <strategy class="hudson.tasks.LogRotator">
+        <daysToKeep>1</daysToKeep>
+        <numToKeep>4</numToKeep>
+        <artifactDaysToKeep>-1</artifactDaysToKeep>
+        <artifactNumToKeep>-1</artifactNumToKeep>
+        <removeLastBuild>false</removeLastBuild>
+      </strategy>
+    </jenkins.model.BuildDiscarderProperty>
+    <com.coravy.hudson.plugins.github.GithubProjectProperty plugin="github@1.40.0">
+      <projectUrl>https://github.com/sathvik-sp/BankingMicroservice-R.git/</projectUrl>
+      <displayName></displayName>
+    </com.coravy.hudson.plugins.github.GithubProjectProperty>
+    <org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>
+      <triggers>
+        <com.cloudbees.jenkins.GitHubPushTrigger plugin="github@1.40.0">
+          <spec></spec>
+        </com.cloudbees.jenkins.GitHubPushTrigger>
+        <hudson.triggers.SCMTrigger>
+          <spec>H/3 * * * *</spec>
+          <ignorePostCommitHooks>false</ignorePostCommitHooks>
+        </hudson.triggers.SCMTrigger>
+      </triggers>
+    </org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3993.v3e20a_37282f8">
+    <script>pipeline {
+    agent none 
+        
+    stages {
+        
+        stage(&apos;Cleanup&apos;) {
+            agent {label &apos;java&apos;}
+            steps {
+                script{
+                deleteDir()  // Deletes the workspace before running the build
+                }
+            }
+        }
+        
+        stage(&quot;SCM Checkout node1&quot;) {
+            agent {label &apos;java&apos;}
+            steps {
+                git branch: &apos;main&apos;, 
+                    credentialsId: &apos;host1&apos;, 
+                    url: &apos;git@github.com:sathvik-sp/BankingMicroservice-R.git&apos;
+            }
+        }
+
+        stage(&apos;Install epel-release and Ansible&apos;) {
+            agent {label &apos;java&apos;}
+            steps {
+                script {
+                    sh &apos;&apos;&apos;
+                    sudo dnf -y update
+                    sudo dnf -y install epel-release
+                    sudo dnf -y install ansible
+                    ansible --version
+                    &apos;&apos;&apos;
+                }
+            }
+        }
+
+        stage(&apos;Capture IP Address and Edit Inventory File&apos;) {
+            agent {label &apos;java&apos;}
+            steps {
+                script {
+                    def ipAddress = sh(script: &quot;ip a show eth0 | grep inet | grep -v inet6 | awk &apos;{print \$2}&apos; | cut -d&apos;/&apos; -f1 | head -n 1&quot;, returnStdout: true).trim()
+                    def inventoryFile = &apos;/etc/ansible/hosts&apos;
+                    def existingIpCheck = sh(script: &quot;grep -q &apos;${ipAddress}&apos; ${inventoryFile} &amp;&amp; echo &apos;found&apos; || echo &apos;not_found&apos;&quot;, returnStdout: true).trim()
+
+                    if (existingIpCheck == &apos;not_found&apos;) {
+                        sh &quot;&quot;&quot;
+                        echo &apos;[Controller]&apos; | sudo tee -a ${inventoryFile}
+                        echo &apos;${ipAddress}&apos; | sudo tee -a ${inventoryFile}
+                        &quot;&quot;&quot;
+                        sh &apos;cat /etc/ansible/hosts&apos;
+                    } else {
+                        echo &quot;IP address ${ipAddress} already exists in the inventory. Skipping update.&quot;
+                    }
+                }
+            }
+        }
+
+        stage(&apos;Install Terraform using Ansible Playbook&apos;) {
+            agent {label &apos;java&apos;}
+            steps {
+                script {
+                    sh &apos;ansible-playbook ./ansibleplaybooks/install_teraform.yaml&apos;
+                }
+            }
+        }
+
+        stage(&apos;Terraform Init and Plan&apos;) {
+            agent {label &apos;java&apos;}
+            steps {
+                script {
+                    dir(&apos;terraform&apos;) {
+                        sh &apos;terraform init -force-copy&apos;
+                        sh &apos;terraform plan&apos;
+                        sh &apos;terraform apply -auto-approve&apos;
+                    }
+                }
+            }
+        }
+
+        stage(&quot;SCM Checkout&quot;) {
+        agent {label &apos;java1&apos;}
+            steps {
+                input message: &apos;Do you approve this build?&apos;, 
+                          ok: &apos;Approve&apos;
+                git branch: &apos;main&apos;, 
+                credentialsId: &apos;newhost&apos;, 
+                url: &apos;git@github.com:sathvik-sp/BankingMicroservice-R.git&apos;
+            }
+        }
+        stage(&quot;Run Ansible Playbook&quot;) {
+             agent {label &apos;java1&apos;}
+            steps {
+                script {
+                    // Ensure the playbook is run from the correct path
+                    sh &apos;ansible-playbook ./ansibleplaybooks/pipeline.yml&apos;
+                }
+            }
+        }
+        stage(&quot;Maven Build&quot;) {
+             agent {label &apos;java1&apos;}
+            steps {
+                script {
+                    // Running Maven build
+                    sh &apos;mvn clean install&apos;
+                }
+            }
+        }
+        stage(&quot;Docker Compose Up&quot;) {
+             agent {label &apos;java1&apos;}
+            steps {
+                script {
+                    // Run docker-compose to start containers in detached mode
+                    sh &apos;sudo docker compose -f docker-compose.yaml up -d&apos;
+                }
+            }
+        }
+        
+        stage(&apos;Approval&apos;) {
+             agent {label &apos;java&apos;}
+            steps {
+                script {
+                    // Wait for manual approval
+                    sh &apos;echo &quot;Waiting for approval...&quot;&apos;
+                    //sh &apos;curl 52.156.21.22:8000/hello&apos;
+                    input message: &apos;Do you approve this build?&apos;, 
+                          ok: &apos;Approve&apos;
+                }
+            }
+        }
+        
+        stage(&apos;Terraform destroy&apos;) {
+            agent {label &apos;java&apos;}
+            steps {
+                script {
+                    input message: &apos;Do you approve this build?&apos;, 
+                          ok: &apos;Approve&apos;
+                    dir(&apos;terraform&apos;) {
+                        sh &apos;terraform destroy -auto-approve&apos;
+                    }
+                }
+            }
+        }
+        
+    }
+}</script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>
