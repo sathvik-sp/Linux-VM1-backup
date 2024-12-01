@@ -1,0 +1,24 @@
+pipeline {
+    agent any
+    stages {
+        stage('Build') {
+            steps {
+                echo 'Building...'
+            }
+        }
+        stage('Approval') {
+            steps {
+                script {
+                    // Wait for manual approval
+                    input message: 'Do you approve this build?', 
+                          ok: 'Approve'
+                }
+            }
+        }
+        stage('Deploy') {
+            steps {
+                echo 'Deploying...'
+            }
+        }
+    }
+}
